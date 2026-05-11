@@ -26,6 +26,13 @@
       "required": true
     },
     {
+      "name": "codeDirectory",
+      "title": "Code Directory",
+      "description": "An additional directory of code repositories to include in search results",
+      "type": "directory",
+      "required": false
+    },
+    {
       "name": "openWith",
       "title": "Open With",
       "description": "The application to open projects with",
