@@ -12,6 +12,7 @@ type ProjectSource = {
   titlePrefix: string | null;
   canArchive: boolean;
   directoriesOnly: boolean;
+  source: Project["source"];
 };
 
 async function mapWithConcurrency<T, R>(
@@ -92,6 +93,7 @@ async function getProjectsFromSource(source: ProjectSource) {
       isDiskSizeLoading: false,
       archived,
       canArchive: source.canArchive,
+      source: source.source,
     } satisfies Project;
   });
 
@@ -118,6 +120,7 @@ function getProjectSources(directory: string, codeDirectory: string | undefined)
       titlePrefix: null,
       canArchive: true,
       directoriesOnly: false,
+      source: "projects",
     },
   ];
 
@@ -127,6 +130,7 @@ function getProjectSources(directory: string, codeDirectory: string | undefined)
       titlePrefix: path.basename(codeDirectory),
       canArchive: false,
       directoriesOnly: true,
+      source: "code",
     });
   }
 
@@ -179,11 +183,4 @@ export async function getProjects(
   });
 
   return projects;
-}
-
-export function getProjectDiskSizeSources(directory: string, codeDirectory: string | undefined) {
-  return getProjectSources(directory, codeDirectory).map((source) => ({
-    directory: source.directory,
-    directoriesOnly: source.directoriesOnly,
-  }));
 }

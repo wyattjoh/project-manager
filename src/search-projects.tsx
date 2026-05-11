@@ -3,14 +3,59 @@ import { Color, getPreferenceValues, Keyboard } from "@raycast/api";
 import { ActionPanel, Action, Icon, List, showToast, Toast } from "@raycast/api";
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
 
-import { getProjectDiskSizeSources, getProjects } from "./lib/get-projects";
+import { getProjects } from "./lib/get-projects";
 import { getProjectAccessories } from "./lib/ui/get-project-accessories";
 import { archiveProject } from "./lib/archive-project";
 import type { Project } from "./types/project";
 import { unarchiveProject } from "./lib/unarchive-project";
-import { getCachedProjectDiskSizes, streamProjectDiskSizes, type DiskSizeMap } from "./lib/get-project-disk-size";
+import {
+  getCachedProjectDiskSizes,
+  refreshProjectDiskSize,
+  streamProjectDiskSizes,
+  type DiskSizeMap,
+  type DiskSizeProject,
+} from "./lib/get-project-disk-size";
+import { getProjectGitDetails } from "./lib/get-project-git-details";
 
-type View = Preferences.SearchProjects["defaultView"];
+type View = "all" | "code" | "projects" | "active-projects" | "archived-projects";
+
+function getProjectDataSignature(data: Project[] | undefined) {
+  if (!data) {
+    return null;
+  }
+
+  return data.map((project) => `${project.pathname}:${getProjectLastCommitTime(project) ?? "none"}`).join("\n");
+}
+
+function getProjectLastCommitTime(project: Project) {
+  if (!project.lastModifiedTime) {
+    return null;
+  }
+
+  const time = new Date(project.lastModifiedTime).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function getDiskSizeProjects(data: Project[] | undefined): DiskSizeProject[] {
+  return (
+    data?.map((project) => ({
+      pathname: project.pathname,
+      lastCommitTime: getProjectLastCommitTime(project),
+    })) ?? []
+  );
+}
+
+function getInitialView(defaultView: Preferences.SearchProjects["defaultView"]): View {
+  if (defaultView === "active") {
+    return "active-projects";
+  }
+
+  if (defaultView === "archived") {
+    return "archived-projects";
+  }
+
+  return "all";
+}
 
 export default function Command() {
   const { directory, codeDirectory, openWith, excludePatterns, defaultView } =
@@ -25,20 +70,24 @@ export default function Command() {
   const [diskSizes, setDiskSizes] = useState<DiskSizeMap>(() => getCachedProjectDiskSizes());
   const [isLoadingDiskSizes, setIsLoadingDiskSizes] = useState(false);
   const [diskSizeRefreshKey, setDiskSizeRefreshKey] = useState(0);
+  const [projectOverrides, setProjectOverrides] = useState<Record<string, Partial<Project>>>({});
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
-  const [view, setView] = useState<View>(defaultView);
+  const [view, setView] = useState<View>(() => getInitialView(defaultView));
+  const projectDataSignature = useMemo(() => getProjectDataSignature(data), [data]);
+  const diskSizeProjects = useMemo(() => getDiskSizeProjects(data), [projectDataSignature]);
 
   useEffect(() => {
     setDiskSizes(getCachedProjectDiskSizes());
+    setProjectOverrides({});
   }, [codeDirectory, directory]);
 
   useEffect(() => {
-    if (!data) {
+    if (!projectDataSignature) {
       return;
     }
 
     setIsLoadingDiskSizes(true);
-    const stopStreaming = streamProjectDiskSizes(getProjectDiskSizeSources(directory, codeDirectory), {
+    const stopStreaming = streamProjectDiskSizes([{ projects: diskSizeProjects }], {
       onSize: (pathname, size) => {
         setDiskSizes((current) => {
           if (current[pathname] === size) {
@@ -61,20 +110,70 @@ export default function Command() {
       setIsLoadingDiskSizes(false);
       stopStreaming();
     };
-  }, [codeDirectory, data, directory, diskSizeRefreshKey]);
+  }, [diskSizeProjects, diskSizeRefreshKey, projectDataSignature]);
 
   const applyDiskSize = useCallback(
     (item: Project) => {
-      const diskSize = diskSizes[item.pathname] ?? item.diskSize;
+      const overriddenItem = {
+        ...item,
+        ...projectOverrides[item.pathname],
+      };
+      const diskSize = diskSizes[overriddenItem.pathname] ?? overriddenItem.diskSize;
 
       return {
-        ...item,
+        ...overriddenItem,
         diskSize,
         isDiskSizeLoading: !diskSize && isLoadingDiskSizes,
       };
     },
-    [diskSizes, isLoadingDiskSizes],
+    [diskSizes, isLoadingDiskSizes, projectOverrides],
   );
+
+  const onRefreshProject = useCallback(async (project: Project) => {
+    try {
+      showToast({
+        style: Toast.Style.Animated,
+        title: "Refreshing project...",
+      });
+
+      const gitDetails = await getProjectGitDetails(project.pathname);
+      const lastModifiedTime = gitDetails.lastCommitTime ? new Date(gitDetails.lastCommitTime) : null;
+      const diskSize = await refreshProjectDiskSize({
+        pathname: project.pathname,
+        lastCommitTime: gitDetails.lastCommitTime,
+      });
+
+      if (diskSize) {
+        setDiskSizes((current) => ({
+          ...current,
+          [project.pathname]: diskSize,
+        }));
+      }
+
+      setProjectOverrides((current) => ({
+        ...current,
+        [project.pathname]: {
+          gitBranch: gitDetails.branch,
+          lastModifiedTime,
+          diskSize: diskSize ?? project.diskSize,
+          isDiskSizeLoading: false,
+        },
+      }));
+
+      showToast({
+        title: "Project refreshed",
+        message: project.filename,
+      });
+    } catch (err) {
+      showFailureToast(err);
+    }
+  }, []);
+
+  const onRefreshAll = useCallback(() => {
+    revalidate();
+    setProjectOverrides({});
+    setDiskSizeRefreshKey((key) => key + 1);
+  }, [revalidate]);
 
   const onUnarchiveProject = useCallback(
     async (project: Project) => {
@@ -89,7 +188,7 @@ export default function Command() {
         revalidate();
         setDiskSizeRefreshKey((key) => key + 1);
 
-        if (view === "archived") {
+        if (view === "archived-projects") {
           startTransition(() => {
             setView("all");
             setSelectedItemId(project.id);
@@ -120,7 +219,7 @@ export default function Command() {
         revalidate();
         setDiskSizeRefreshKey((key) => key + 1);
 
-        if (view === "active") {
+        if (view === "active-projects") {
           startTransition(() => {
             setView("all");
             setSelectedItemId(project.id);
@@ -147,22 +246,32 @@ export default function Command() {
       return data.map(applyDiskSize);
     }
 
-    if (view === "archived") {
-      return data?.filter((item) => item.archived).map(applyDiskSize);
+    if (view === "code") {
+      return data?.filter((item) => item.source === "code").map(applyDiskSize);
     }
 
-    return data?.filter((item) => !item.archived).map(applyDiskSize);
+    if (view === "projects") {
+      return data?.filter((item) => item.source === "projects").map(applyDiskSize);
+    }
+
+    if (view === "active-projects") {
+      return data?.filter((item) => item.source === "projects" && !item.archived).map(applyDiskSize);
+    }
+
+    return data?.filter((item) => item.source === "projects" && item.archived).map(applyDiskSize);
   }, [applyDiskSize, data, view]);
 
   return (
     <List
-      isLoading={isLoading}
+      isLoading={isLoading || isLoadingDiskSizes}
       selectedItemId={selectedItemId}
       searchBarAccessory={
         <List.Dropdown tooltip="Dropdown With Items" value={view} onChange={(value) => setView(value as View)}>
           <List.Dropdown.Item title="All" value="all" />
-          <List.Dropdown.Item title="Active" value="active" />
-          <List.Dropdown.Item title="Archived" value="archived" />
+          <List.Dropdown.Item title="Code Only" value="code" />
+          <List.Dropdown.Item title="Projects Only" value="projects" />
+          <List.Dropdown.Item title="Active Projects Only" value="active-projects" />
+          <List.Dropdown.Item title="Archived Projects Only" value="archived-projects" />
         </List.Dropdown>
       }
     >
@@ -175,7 +284,20 @@ export default function Command() {
           actions={
             <ActionPanel>
               {item.archived && item.canArchive ? (
-                <Action title="Unarchive Project" onAction={onUnarchiveProject.bind(null, item)} icon={Icon.Folder} />
+                <>
+                  <Action
+                    title="Refresh Project"
+                    onAction={onRefreshProject.bind(null, item)}
+                    icon={Icon.ArrowClockwise}
+                  />
+                  <Action
+                    title="Refresh All Projects"
+                    onAction={onRefreshAll}
+                    icon={Icon.ArrowClockwise}
+                    shortcut={Keyboard.Shortcut.Common.Refresh}
+                  />
+                  <Action title="Unarchive Project" onAction={onUnarchiveProject.bind(null, item)} icon={Icon.Folder} />
+                </>
               ) : (
                 <>
                   <Action.Open
@@ -194,6 +316,13 @@ export default function Command() {
                     title="Copy Absolute Path"
                     content={item.pathname}
                     shortcut={Keyboard.Shortcut.Common.Copy}
+                  />
+                  <Action title="Refresh One" onAction={onRefreshProject.bind(null, item)} icon={Icon.ArrowClockwise} />
+                  <Action
+                    title="Refresh All"
+                    onAction={onRefreshAll}
+                    icon={Icon.ArrowClockwise}
+                    shortcut={Keyboard.Shortcut.Common.Refresh}
                   />
                   {item.canArchive ? (
                     <Action

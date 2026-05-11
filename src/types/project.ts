@@ -8,4 +8,5 @@ export type Project = {
   isDiskSizeLoading: boolean;
   archived: boolean;
   canArchive: boolean;
+  source: "code" | "projects";
 };
