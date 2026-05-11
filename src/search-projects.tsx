@@ -337,8 +337,8 @@ export default function Command() {
             </ActionPanel>
           }
           icon={{
-            source: item.archived ? "folder-archive.svg" : "folder.svg",
-            tintColor: item.archived ? Color.SecondaryText : Color.PrimaryText,
+            source: item.source === "code" ? Icon.Code : item.archived ? "folder-archive.svg" : "folder.svg",
+            tintColor: item.source === "code" ? Color.Blue : item.archived ? Color.SecondaryText : Color.PrimaryText,
           }}
         />
       ))}
