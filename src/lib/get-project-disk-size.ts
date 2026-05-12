@@ -3,8 +3,6 @@ import * as child_process from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { getProfileDuration, getProfileStart, logProfile } from "./profile-log";
-
 const CACHE_KEY = "project-disk-sizes:v2";
 const cache = new Cache({ namespace: "project-manager" });
 const execFile = promisify(child_process.execFile);
@@ -31,7 +29,6 @@ type DiskSizeSource = {
 type StreamOptions = {
   onSize: (pathname: string, size: string) => void;
   onComplete?: (sizes: DiskSizeMap) => void;
-  isCanceled?: () => boolean;
 };
 
 function parseCache() {
@@ -128,59 +125,14 @@ export async function refreshProjectDiskSize(project: DiskSizeProject) {
 }
 
 async function getMissingDiskSizes(pathnames: string[]) {
-  const start = getProfileStart();
   const entries = await mapWithConcurrency(pathnames, FALLBACK_CONCURRENCY, getDiskSize);
-  const sizes = entries.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-
-  logProfile("du fallback complete", {
-    requested: pathnames.length,
-    entries: sizes.length,
-    durationMs: getProfileDuration(start),
-  });
-
-  return sizes;
+  return entries.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 }
 
 function streamDiskSizesForSource(source: DiskSizeSource, options: StreamOptions) {
-  const start = getProfileStart();
   const pathnames = source.projects.map((project) => project.pathname);
   const child = child_process.spawn("du", ["-sh", ...pathnames]);
   let pending = "";
-  let entries = 0;
-  let settled = false;
-
-  const finish = (error?: Error) => {
-    if (settled) {
-      return;
-    }
-
-    settled = true;
-
-    if (options.isCanceled?.()) {
-      logProfile("du stream canceled", {
-        pathnames: pathnames.length,
-        entries,
-        durationMs: getProfileDuration(start),
-      });
-      return;
-    }
-
-    if (error) {
-      logProfile("du stream failed", {
-        pathnames: pathnames.length,
-        entries,
-        durationMs: getProfileDuration(start),
-        error: error.message,
-      });
-      return;
-    }
-
-    logProfile("du stream complete", {
-      pathnames: pathnames.length,
-      entries,
-      durationMs: getProfileDuration(start),
-    });
-  };
 
   const processLine = (line: string) => {
     const entry = parseDuLine(line);
@@ -188,7 +140,6 @@ function streamDiskSizesForSource(source: DiskSizeSource, options: StreamOptions
       return;
     }
 
-    entries += 1;
     options.onSize(entry.pathname, entry.size);
   };
 
@@ -203,14 +154,12 @@ function streamDiskSizesForSource(source: DiskSizeSource, options: StreamOptions
     }
   });
 
-  child.on("error", finish);
-  child.on("close", (code) => {
+  child.on("error", () => {});
+  child.on("close", () => {
     if (pending) {
       processLine(pending);
       pending = "";
     }
-
-    finish(code === 0 ? undefined : new Error(`du exited with code ${code}`));
   });
 
   return child;
@@ -231,7 +180,6 @@ export function invalidateProjectDiskSizes(pathnames: string[]) {
 }
 
 export function streamProjectDiskSizes(sources: DiskSizeSource[], options: StreamOptions) {
-  const start = getProfileStart();
   const nextCache = { ...parseCache() };
   const projectsByPathname = new Map(
     sources.flatMap((source) => source.projects.map((project) => [project.pathname, project])),
@@ -242,12 +190,6 @@ export function streamProjectDiskSizes(sources: DiskSizeSource[], options: Strea
   const expectedPathnames = new Set(refreshProjects.map((project) => project.pathname));
   const seenPathnames = new Set<string>();
   let canceled = false;
-
-  logProfile("disk size stream started", {
-    cached: Object.keys(nextCache).length,
-    requested: projectsByPathname.size,
-    refresh: refreshProjects.length,
-  });
 
   if (refreshProjects.length === 0) {
     options.onComplete?.(getSizeMap(nextCache));
@@ -260,7 +202,6 @@ export function streamProjectDiskSizes(sources: DiskSizeSource[], options: Strea
         projects: refreshProjects,
       },
       {
-        isCanceled: () => canceled,
         onSize: (pathname, size) => {
           if (canceled) {
             return;
@@ -288,14 +229,6 @@ export function streamProjectDiskSizes(sources: DiskSizeSource[], options: Strea
 
       if (remaining === 0) {
         const missingPathnames = Array.from(expectedPathnames).filter((pathname) => !seenPathnames.has(pathname));
-        if (missingPathnames.length > 0) {
-          logProfile("du stream missing entries", {
-            requested: expectedPathnames.size,
-            entries: seenPathnames.size,
-            missing: missingPathnames.length,
-            examples: missingPathnames.slice(0, 5),
-          });
-        }
 
         void getMissingDiskSizes(missingPathnames).then((sizes) => {
           if (canceled) {
@@ -311,11 +244,6 @@ export function streamProjectDiskSizes(sources: DiskSizeSource[], options: Strea
           }
 
           writeCache(nextCache);
-          logProfile("disk size stream complete", {
-            entries: Object.keys(nextCache).length,
-            refreshed: refreshProjects.length,
-            durationMs: getProfileDuration(start),
-          });
           options.onComplete?.(getSizeMap(nextCache));
         });
       }

@@ -5,6 +5,9 @@ export type Project = {
   lastModifiedTime: Date | null;
   gitBranch: string | null;
   gitDirty: boolean;
+  gitUpstream: string | null;
+  gitAhead: number;
+  gitBehind: number;
   diskSize: string | null;
   isDiskSizeLoading: boolean;
   archived: boolean;

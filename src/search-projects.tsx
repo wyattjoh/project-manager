@@ -18,6 +18,7 @@ import {
 } from "./lib/get-project-disk-size";
 import { getProjectGitDetails } from "./lib/get-project-git-details";
 import { getProjectWorktrees, removeProjectWorktree } from "./lib/get-project-worktrees";
+import { pullProjectFastForward } from "./lib/pull-project";
 
 type View = "all" | "code" | "projects" | "active-projects" | "archived-projects";
 
@@ -68,6 +69,10 @@ function getProjectIcon(project: Project) {
 
 function isSamePath(left: string, right: string) {
   return left.replace(/\/+$/, "") === right.replace(/\/+$/, "");
+}
+
+function canFastForward(project: Project) {
+  return Boolean(project.gitUpstream) && !project.gitDirty && project.gitBehind > 0 && project.gitAhead === 0;
 }
 
 function WorktreesList({
@@ -130,6 +135,20 @@ function WorktreesList({
         };
       }),
     [data, diskSizes, isLoadingDiskSizes],
+  );
+
+  const onPullWorktree = useCallback(
+    async (worktree: Project) => {
+      try {
+        showToast({ style: Toast.Style.Animated, title: "Pulling latest changes..." });
+        await pullProjectFastForward(worktree.pathname);
+        showToast({ title: "Pulled latest changes", message: worktree.filename });
+        revalidate();
+      } catch (err) {
+        showFailureToast(err);
+      }
+    },
+    [revalidate],
   );
 
   const onDeleteWorktree = useCallback(
@@ -199,6 +218,14 @@ function WorktreesList({
                 content={item.pathname}
                 shortcut={{ modifiers: ["cmd"], key: "c" }}
               />
+              {canFastForward(item) ? (
+                <Action
+                  title="Pull Latest"
+                  onAction={onPullWorktree.bind(null, item)}
+                  icon={Icon.Download}
+                  shortcut={{ modifiers: ["cmd", "shift"], key: "p" }}
+                />
+              ) : null}
               {!isSamePath(item.pathname, project.pathname) ? (
                 <Action
                   title="Delete Worktree"
@@ -314,6 +341,9 @@ export default function Command() {
         [project.pathname]: {
           gitBranch: gitDetails.branch,
           gitDirty: gitDetails.dirty,
+          gitUpstream: gitDetails.upstream,
+          gitAhead: gitDetails.ahead,
+          gitBehind: gitDetails.behind,
           lastModifiedTime,
           worktreeCount: gitDetails.worktreeCount,
           diskSize: diskSize ?? project.diskSize,
@@ -329,6 +359,20 @@ export default function Command() {
       showFailureToast(err);
     }
   }, []);
+
+  const onPullProject = useCallback(
+    async (project: Project) => {
+      try {
+        showToast({ style: Toast.Style.Animated, title: "Pulling latest changes..." });
+        await pullProjectFastForward(project.pathname);
+        showToast({ title: "Pulled latest changes", message: project.filename });
+        await onRefreshProject(project);
+      } catch (err) {
+        showFailureToast(err);
+      }
+    },
+    [onRefreshProject],
+  );
 
   const onRefreshAll = useCallback(() => {
     revalidate();
@@ -521,6 +565,14 @@ export default function Command() {
                     content={item.pathname}
                     shortcut={{ modifiers: ["cmd"], key: "c" }}
                   />
+                  {canFastForward(item) ? (
+                    <Action
+                      title="Pull Latest"
+                      onAction={onPullProject.bind(null, item)}
+                      icon={Icon.Download}
+                      shortcut={{ modifiers: ["cmd", "shift"], key: "p" }}
+                    />
+                  ) : null}
                   <Action
                     title="Refresh Project"
                     onAction={onRefreshProject.bind(null, item)}

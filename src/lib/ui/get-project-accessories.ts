@@ -14,6 +14,22 @@ export function getProjectAccessories(project: Project, options: Options = {}) {
     accessories.push(getRelativeTimeTag(project.lastModifiedTime));
   }
 
+  if (project.gitAhead > 0 || project.gitBehind > 0) {
+    const parts: string[] = [];
+    if (project.gitAhead > 0) parts.push(`↑${project.gitAhead}`);
+    if (project.gitBehind > 0) parts.push(`↓${project.gitBehind}`);
+
+    const color =
+      project.gitAhead > 0 && project.gitBehind > 0 ? Color.Magenta : project.gitAhead > 0 ? Color.Blue : Color.Orange;
+
+    const tooltipParts: string[] = [];
+    if (project.gitAhead > 0) tooltipParts.push(`${project.gitAhead} ahead`);
+    if (project.gitBehind > 0) tooltipParts.push(`${project.gitBehind} behind`);
+    const tooltip = `${tooltipParts.join(", ")}${project.gitUpstream ? ` ${project.gitUpstream}` : ""}`;
+
+    accessories.unshift({ tag: { value: parts.join(" "), color }, tooltip });
+  }
+
   if (project.gitBranch) {
     accessories.unshift({
       tag: {
