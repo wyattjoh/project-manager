@@ -11,7 +11,9 @@ const SLOW_GIT_THRESHOLD_MS = 250;
 
 type ProjectGitDetails = {
   branch: string | null;
+  dirty: boolean;
   lastCommitTime: number | null;
+  worktreeCount: number;
 };
 
 async function execGit(dir: string, args: string[]) {
@@ -51,18 +53,46 @@ async function getGitBranch(dir: string) {
   }
 }
 
+async function getCommonGitDir(gitDir: string) {
+  try {
+    const commonDir = (await fs.readFile(path.join(gitDir, "commondir"), "utf8")).trim();
+    return path.isAbsolute(commonDir) ? commonDir : path.resolve(gitDir, commonDir);
+  } catch {
+    return gitDir;
+  }
+}
+
+async function getWorktreeCount(dir: string) {
+  try {
+    const gitDir = await getGitDir(dir);
+    if (!gitDir) {
+      return 0;
+    }
+
+    const commonGitDir = await getCommonGitDir(gitDir);
+    const worktrees = await fs.readdir(path.join(commonGitDir, "worktrees")).catch(() => []);
+
+    return worktrees.length + 1;
+  } catch {
+    return 0;
+  }
+}
+
 export async function getProjectGitDetails(dir: string): Promise<ProjectGitDetails> {
   const start = getProfileStart();
 
   try {
     if (!(await exists(path.join(dir, ".git")))) {
-      return { branch: null, lastCommitTime: null };
+      return { branch: null, dirty: false, lastCommitTime: null, worktreeCount: 0 };
     }
 
-    const [branch, lastCommitTimestamp] = await Promise.all([
+    const [branch, dirtyStatus, lastCommitTimestamp, worktreeCount] = await Promise.all([
       getGitBranch(dir),
+      execGit(dir, ["status", "--porcelain"]).catch(() => ""),
       execGit(dir, ["log", "-1", "--format=%ct"]).catch(() => null),
+      getWorktreeCount(dir),
     ]);
+    const dirty = dirtyStatus.length > 0;
 
     const duration = getProfileDuration(start);
     if (duration >= SLOW_GIT_THRESHOLD_MS) {
@@ -70,13 +100,17 @@ export async function getProjectGitDetails(dir: string): Promise<ProjectGitDetai
         directory: dir,
         durationMs: duration,
         branch,
+        dirty,
         hasCommit: Boolean(lastCommitTimestamp),
+        worktreeCount,
       });
     }
 
     return {
       branch,
+      dirty,
       lastCommitTime: lastCommitTimestamp ? Number(lastCommitTimestamp) * 1000 : null,
+      worktreeCount,
     };
   } catch (error) {
     logProfile("git metadata failed", {
@@ -85,6 +119,6 @@ export async function getProjectGitDetails(dir: string): Promise<ProjectGitDetai
       error: error instanceof Error ? error.message : String(error),
     });
 
-    return { branch: null, lastCommitTime: null };
+    return { branch: null, dirty: false, lastCommitTime: null, worktreeCount: 0 };
   }
 }

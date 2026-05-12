@@ -89,10 +89,12 @@ async function getProjectsFromSource(source: ProjectSource) {
       pathname,
       lastModifiedTime: gitDetails.lastCommitTime ? new Date(gitDetails.lastCommitTime) : null,
       gitBranch: gitDetails.branch,
+      gitDirty: gitDetails.dirty,
       diskSize: null,
       isDiskSizeLoading: false,
       archived,
       canArchive: source.canArchive,
+      worktreeCount: gitDetails.worktreeCount,
       source: source.source,
     } satisfies Project;
   });

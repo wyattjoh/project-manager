@@ -220,6 +220,16 @@ export function getCachedProjectDiskSizes() {
   return getSizeMap(parseCache());
 }
 
+export function invalidateProjectDiskSizes(pathnames: string[]) {
+  const nextCache = { ...parseCache() };
+
+  for (const pathname of pathnames) {
+    delete nextCache[pathname];
+  }
+
+  writeCache(nextCache);
+}
+
 export function streamProjectDiskSizes(sources: DiskSizeSource[], options: StreamOptions) {
   const start = getProfileStart();
   const nextCache = { ...parseCache() };
