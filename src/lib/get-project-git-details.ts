@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { exists } from "./exists";
 import { createLogger } from "./log";
 
 const execFile = promisify(child_process.execFile);
@@ -41,14 +40,23 @@ const EMPTY_DETAILS: ProjectGitDetails = {
   behind: 0,
 };
 
+/**
+ * Runs a read-only git command. `--no-optional-locks` keeps the probe from
+ * taking `index.lock` to write a refreshed index, so scanning every project
+ * cannot contend with git commands the user is running in those repositories.
+ */
 async function execGit(dir: string, args: string[]) {
-  const { stdout } = await execFile("git", args, { cwd: dir });
+  const { stdout } = await execFile("git", ["--no-optional-locks", ...args], { cwd: dir });
   return stdout.trim();
 }
 
 async function getGitDir(dir: string) {
   const dotGitPath = path.join(dir, ".git");
-  const stats = await fs.lstat(dotGitPath);
+  const stats = await fs.lstat(dotGitPath).catch(() => null);
+
+  if (!stats) {
+    return null;
+  }
 
   if (stats.isDirectory()) {
     return dotGitPath;
@@ -182,11 +190,6 @@ export async function getProjectGitDetails(dir: string): Promise<ProjectGitDetai
   const start = Date.now();
 
   try {
-    if (!(await exists(path.join(dir, ".git")))) {
-      log("probe path=%s totalMs=%d no-git", dir, Date.now() - start);
-      return EMPTY_DETAILS;
-    }
-
     const gitDir = await getGitDir(dir);
     if (!gitDir) {
       log("probe path=%s totalMs=%d no-gitdir", dir, Date.now() - start);

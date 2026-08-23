@@ -50,7 +50,7 @@ function parseWorktreeList(output: string) {
 
 export async function getProjectWorktrees(project: Project): Promise<Project[]> {
   const start = Date.now();
-  const { stdout } = await execFile("git", ["worktree", "list", "--porcelain"], {
+  const { stdout } = await execFile("git", ["--no-optional-locks", "worktree", "list", "--porcelain"], {
     cwd: project.pathname,
   });
   const worktrees = parseWorktreeList(stdout);
