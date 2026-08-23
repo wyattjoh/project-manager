@@ -164,7 +164,7 @@ function WorktreesList({
         return {
           ...item,
           diskSize,
-          isDiskSizeLoading: !diskSize && isLoadingDiskSizes,
+          isDiskSizeLoading: diskSize === null && isLoadingDiskSizes,
         };
       }),
     [data, diskSizes, isLoadingDiskSizes],
@@ -245,7 +245,7 @@ function WorktreesList({
                 icon={Icon.Folder}
                 shortcut={Keyboard.Shortcut.Common.Open}
               />
-              <Action.OpenWith title="Open With" path={item.pathname} shortcut={Keyboard.Shortcut.Common.OpenWith} />
+              <Action.OpenWith title="Open with" path={item.pathname} shortcut={Keyboard.Shortcut.Common.OpenWith} />
               <Action.CopyToClipboard
                 title="Copy Absolute Path"
                 content={item.pathname}
@@ -340,7 +340,7 @@ export default function Command() {
       return {
         ...overriddenItem,
         diskSize,
-        isDiskSizeLoading: !diskSize && isLoadingDiskSizes,
+        isDiskSizeLoading: diskSize === null && isLoadingDiskSizes,
       };
     },
     [diskSizes, isLoadingDiskSizes, projectOverrides],
@@ -360,7 +360,7 @@ export default function Command() {
         lastCommitTime: gitDetails.lastCommitTime,
       });
 
-      if (diskSize) {
+      if (diskSize !== null) {
         setDiskSizes((current) => ({
           ...current,
           [project.pathname]: diskSize,
@@ -604,7 +604,7 @@ export default function Command() {
                     shortcut={Keyboard.Shortcut.Common.Open}
                   />
                   <Action.OpenWith
-                    title="Open With"
+                    title="Open with"
                     path={item.pathname}
                     shortcut={Keyboard.Shortcut.Common.OpenWith}
                   />

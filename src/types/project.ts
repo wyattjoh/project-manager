@@ -8,7 +8,8 @@ export type Project = {
   gitUpstream: string | null;
   gitAhead: number;
   gitBehind: number;
-  diskSize: string | null;
+  /** Size on disk in bytes. */
+  diskSize: number | null;
   isDiskSizeLoading: boolean;
   archived: boolean;
   canArchive: boolean;

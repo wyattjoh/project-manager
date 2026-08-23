@@ -40,10 +40,10 @@ describe("sortProjects", () => {
 
   test("sorts projects by largest disk size with unknown sizes last", () => {
     const projects = [
-      makeProject({ filename: "small", diskSize: "512K" }),
+      makeProject({ filename: "small", diskSize: 512 * 1024 }),
       makeProject({ filename: "unknown", diskSize: null }),
-      makeProject({ filename: "large", diskSize: "1.5G" }),
-      makeProject({ filename: "medium", diskSize: "700M" }),
+      makeProject({ filename: "large", diskSize: 1.5 * 1024 ** 3 }),
+      makeProject({ filename: "medium", diskSize: 700 * 1024 ** 2 }),
     ];
 
     assert.deepEqual(

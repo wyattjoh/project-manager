@@ -1,5 +1,6 @@
 import { Color, Icon, type List } from "@raycast/api";
 import type { Project } from "../../types/project";
+import { formatBytes } from "../format-bytes";
 import { getRelativeTimeTag } from "./get-relative-time-tag";
 
 type Options = {
@@ -48,8 +49,8 @@ export function getProjectAccessories(project: Project, options: Options = {}) {
     });
   }
 
-  if (project.diskSize) {
-    accessories.unshift({ tag: { value: project.diskSize, color: Color.Blue } });
+  if (project.diskSize !== null) {
+    accessories.unshift({ tag: { value: formatBytes(project.diskSize), color: Color.Blue } });
   } else if (project.isDiskSizeLoading) {
     accessories.unshift({ tag: { value: "Calculating size...", color: Color.SecondaryText } });
   }
