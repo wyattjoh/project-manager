@@ -164,7 +164,7 @@ function DebugItem({ title, subtitle, value, accessories, snapshot, onRefresh }:
             />
             {snapshot ? (
               <Action.CopyToClipboard
-                title="Copy Debug Snapshot as Json"
+                title="Copy Debug Snapshot as JSON"
                 content={JSON.stringify(snapshot, null, 2)}
                 icon={Icon.Code}
               />
