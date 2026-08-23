@@ -1,17 +1,19 @@
 import type { Project } from "../types/project";
-import fs from "node:fs/promises";
-import path from "node:path";
 
 import { getProjectGitDetails } from "./get-project-git-details";
+import { createLogger } from "./log";
+import { discoverProjectSources, parseProjectPatterns, type ProjectSource } from "./project-sources";
 
 const PROJECT_SCAN_CONCURRENCY = 8;
-
-type ProjectSource = {
-  directory: string;
-  titlePrefix: string | null;
-  canArchive: boolean;
-  directoriesOnly: boolean;
-  source: Project["source"];
+const log = createLogger("project-manager:scan");
+const EMPTY_GIT_DETAILS = {
+  branch: null,
+  dirty: false,
+  lastCommitTime: null,
+  worktreeCount: 0,
+  upstream: null,
+  ahead: 0,
+  behind: 0,
 };
 
 async function mapWithConcurrency<T, R>(
@@ -36,87 +38,45 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function getProjectFilenames(source: ProjectSource) {
-  const entries = await fs.readdir(source.directory, { withFileTypes: true });
-
-  return entries
-    .filter((entry) => !entry.name.startsWith("."))
-    .filter((entry) => !source.directoriesOnly || entry.isDirectory())
-    .map((entry) => entry.name);
-}
-
 async function getProjectsFromSource(source: ProjectSource) {
-  let filenames: string[];
-  try {
-    filenames = await getProjectFilenames(source);
-  } catch (error) {
-    if (!source.canArchive) {
-      return [];
-    }
+  const start = Date.now();
+  const gitDetails = source.archived ? EMPTY_GIT_DETAILS : await getProjectGitDetails(source.pathname);
 
-    throw error;
-  }
+  log(
+    "source done path=%s archived=%s probeMs=%d totalMs=%d",
+    source.pathname,
+    source.archived,
+    Date.now() - start,
+    Date.now() - start,
+  );
 
-  return mapWithConcurrency(filenames, PROJECT_SCAN_CONCURRENCY, async (filename): Promise<Project> => {
-    const archived = source.canArchive && filename.endsWith(".tar.bz2");
-    const pathname = path.join(source.directory, filename);
-    const title = source.titlePrefix ? `${source.titlePrefix}/${filename}` : filename;
-
-    const gitDetails = await getProjectGitDetails(pathname);
-
-    return {
-      id: pathname,
-      filename: title,
-      pathname,
-      lastModifiedTime: gitDetails.lastCommitTime ? new Date(gitDetails.lastCommitTime) : null,
-      gitBranch: gitDetails.branch,
-      gitDirty: gitDetails.dirty,
-      gitUpstream: gitDetails.upstream,
-      gitAhead: gitDetails.ahead,
-      gitBehind: gitDetails.behind,
-      diskSize: null,
-      isDiskSizeLoading: false,
-      archived,
-      canArchive: source.canArchive,
-      worktreeCount: gitDetails.worktreeCount,
-      source: source.source,
-    } satisfies Project;
-  });
+  return {
+    id: source.pathname,
+    filename: source.filename,
+    pathname: source.pathname,
+    lastModifiedTime: gitDetails.lastCommitTime ? new Date(gitDetails.lastCommitTime) : null,
+    gitBranch: gitDetails.branch,
+    gitDirty: gitDetails.dirty,
+    gitUpstream: gitDetails.upstream,
+    gitAhead: gitDetails.ahead,
+    gitBehind: gitDetails.behind,
+    diskSize: null,
+    isDiskSizeLoading: false,
+    archived: source.archived,
+    canArchive: source.canArchive,
+    worktreeCount: gitDetails.worktreeCount,
+    source: source.source,
+  } satisfies Project;
 }
 
-function getProjectSources(directory: string, codeDirectory: string | undefined) {
-  const sources: ProjectSource[] = [
-    {
-      directory,
-      titlePrefix: null,
-      canArchive: true,
-      directoriesOnly: false,
-      source: "projects",
-    },
-  ];
-
-  if (codeDirectory) {
-    sources.push({
-      directory: codeDirectory,
-      titlePrefix: path.basename(codeDirectory),
-      canArchive: false,
-      directoriesOnly: true,
-      source: "code",
-    });
-  }
-
-  return sources;
-}
-
-export async function getProjects(
-  directory: string,
-  codeDirectory: string | undefined,
-  _excludePatterns: string[],
-): Promise<Project[]> {
+export async function getProjects(directory: string, _excludePatterns: string[]): Promise<Project[]> {
   void _excludePatterns;
 
-  const sources = getProjectSources(directory, codeDirectory);
-  const projects = (await Promise.all(sources.map(getProjectsFromSource))).flat();
+  const start = Date.now();
+  const sources = await discoverProjectSources(parseProjectPatterns(directory));
+  log("scan begin sources=%d paths=%s", sources.length, sources.map((s) => s.pathname).join(","));
+  const projects = await mapWithConcurrency(sources, PROJECT_SCAN_CONCURRENCY, getProjectsFromSource);
+  const probeEnd = Date.now();
 
   // Sort by last commit time, keeping projects without commit dates at the bottom.
   projects.sort((a, b) => {
@@ -134,6 +94,15 @@ export async function getProjects(
 
     return b.lastModifiedTime.getTime() - a.lastModifiedTime.getTime();
   });
+
+  log(
+    "scan done sources=%d entries=%d probeMs=%d sortMs=%d totalMs=%d",
+    sources.length,
+    projects.length,
+    probeEnd - start,
+    Date.now() - probeEnd,
+    Date.now() - start,
+  );
 
   return projects;
 }

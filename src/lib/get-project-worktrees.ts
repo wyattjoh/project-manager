@@ -4,8 +4,10 @@ import { promisify } from "node:util";
 
 import type { Project } from "../types/project";
 import { getProjectGitDetails } from "./get-project-git-details";
+import { createLogger } from "./log";
 
 const execFile = promisify(child_process.execFile);
+const log = createLogger("project-manager:scan");
 
 type WorktreeInfo = {
   pathname: string;
@@ -47,6 +49,7 @@ function parseWorktreeList(output: string) {
 }
 
 export async function getProjectWorktrees(project: Project): Promise<Project[]> {
+  const start = Date.now();
   const { stdout } = await execFile("git", ["worktree", "list", "--porcelain"], {
     cwd: project.pathname,
   });
@@ -90,6 +93,8 @@ export async function getProjectWorktrees(project: Project): Promise<Project[]> 
 
     return b.lastModifiedTime.getTime() - a.lastModifiedTime.getTime();
   });
+
+  log("worktrees done project=%s entries=%d totalMs=%d", project.pathname, projects.length, Date.now() - start);
 
   return projects;
 }

@@ -13,5 +13,5 @@ export type Project = {
   archived: boolean;
   canArchive: boolean;
   worktreeCount: number;
-  source: "code" | "projects";
+  source: "projects";
 };

@@ -5,10 +5,12 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { exists } from "./exists";
+import { createLogger } from "./log";
 
 const execFile = promisify(child_process.execFile);
 const cache = new Cache({ namespace: "project-manager" });
 const COMMIT_TIME_CACHE_PREFIX = "git-last-commit:v1:";
+const log = createLogger("project-manager:git");
 
 type ProjectGitDetails = {
   branch: string | null;
@@ -156,22 +158,7 @@ function writeCachedCommitTime(cacheKey: string, timestamp: number) {
   cache.set(COMMIT_TIME_CACHE_PREFIX + cacheKey, String(timestamp));
 }
 
-async function resolveLastCommitTime(
-  dir: string,
-  headOid: string | null,
-  upstream: string | null,
-  upstreamOid: string | null,
-): Promise<number | null> {
-  if (!headOid) {
-    return null;
-  }
-
-  const cacheKey = upstreamOid ? `${headOid}:${upstreamOid}` : headOid;
-  const cached = readCachedCommitTime(cacheKey);
-  if (cached !== null) {
-    return cached;
-  }
-
+async function shellLastCommitTime(dir: string, upstream: string | null): Promise<number | null> {
   const args = ["log", "-1", "--format=%ct"];
   if (upstream) {
     args.push("HEAD", upstream);
@@ -183,12 +170,7 @@ async function resolveLastCommitTime(
   }
 
   const timestamp = Number(stdout) * 1000;
-  if (!Number.isFinite(timestamp)) {
-    return null;
-  }
-
-  writeCachedCommitTime(cacheKey, timestamp);
-  return timestamp;
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 async function getWorktreeCount(commonGitDir: string) {
@@ -197,25 +179,70 @@ async function getWorktreeCount(commonGitDir: string) {
 }
 
 export async function getProjectGitDetails(dir: string): Promise<ProjectGitDetails> {
+  const start = Date.now();
+
   try {
     if (!(await exists(path.join(dir, ".git")))) {
+      log("probe path=%s totalMs=%d no-git", dir, Date.now() - start);
       return EMPTY_DETAILS;
     }
 
     const gitDir = await getGitDir(dir);
     if (!gitDir) {
+      log("probe path=%s totalMs=%d no-gitdir", dir, Date.now() - start);
       return EMPTY_DETAILS;
     }
 
     const commonGitDir = await getCommonGitDir(gitDir);
+
+    const statusStart = Date.now();
     const [status, worktreeCount] = await Promise.all([getGitStatus(dir), getWorktreeCount(commonGitDir)]);
+    const statusMs = Date.now() - statusStart;
 
     if (!status) {
+      log("probe path=%s totalMs=%d statusMs=%d status-failed", dir, Date.now() - start, statusMs);
       return { ...EMPTY_DETAILS, worktreeCount };
     }
 
+    const oidStart = Date.now();
     const upstreamOid = status.upstream ? await readRefOid(commonGitDir, `refs/remotes/${status.upstream}`) : null;
-    const lastCommitTime = await resolveLastCommitTime(dir, status.headOid, status.upstream, upstreamOid);
+    const oidMs = Date.now() - oidStart;
+
+    let lastCommitTime: number | null = null;
+    let logMs = 0;
+    let cacheState: "hit" | "miss" | "no-head" = "no-head";
+
+    if (status.headOid) {
+      const cacheKey = upstreamOid ? `${status.headOid}:${upstreamOid}` : status.headOid;
+      const cached = readCachedCommitTime(cacheKey);
+      if (cached !== null) {
+        lastCommitTime = cached;
+        cacheState = "hit";
+      } else {
+        cacheState = "miss";
+        const logStart = Date.now();
+        lastCommitTime = await shellLastCommitTime(dir, status.upstream);
+        logMs = Date.now() - logStart;
+
+        if (lastCommitTime !== null) {
+          writeCachedCommitTime(cacheKey, lastCommitTime);
+        }
+      }
+    }
+
+    log(
+      "probe path=%s totalMs=%d statusMs=%d oidMs=%d logMs=%d cache=%s dirty=%s ahead=%d behind=%d worktrees=%d",
+      dir,
+      Date.now() - start,
+      statusMs,
+      oidMs,
+      logMs,
+      cacheState,
+      status.dirty,
+      status.ahead,
+      status.behind,
+      worktreeCount,
+    );
 
     return {
       branch: status.branch,
@@ -226,7 +253,8 @@ export async function getProjectGitDetails(dir: string): Promise<ProjectGitDetai
       ahead: status.ahead,
       behind: status.behind,
     };
-  } catch {
+  } catch (err) {
+    log("probe path=%s totalMs=%d error=%s", dir, Date.now() - start, err instanceof Error ? err.message : String(err));
     return EMPTY_DETAILS;
   }
 }

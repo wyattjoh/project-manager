@@ -15,22 +15,21 @@
       "title": "Search Managed Projects",
       "description": "Search projects managed by the project manager along with last modified dates.",
       "mode": "view"
+    },
+    {
+      "name": "debug-configuration",
+      "title": "Debug Project Manager Configuration",
+      "description": "Show the project manager preferences, Raycast runtime environment, and resolved project sources.",
+      "mode": "view"
     }
   ],
   "preferences": [
     {
-      "name": "directory",
-      "title": "Projects Directory",
-      "description": "The directory where your projects that this extension is managing is located",
-      "type": "directory",
+      "name": "projectDirectories",
+      "title": "Projects Directories",
+      "description": "Comma-separated project directory glob patterns, for example ~/Code/github.com/*/*",
+      "type": "textfield",
       "required": true
-    },
-    {
-      "name": "codeDirectory",
-      "title": "Code Directory",
-      "description": "An additional directory of code repositories to include in search results",
-      "type": "directory",
-      "required": false
     },
     {
       "name": "openWith",
@@ -71,23 +70,25 @@
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.88.4",
-    "@raycast/utils": "^1.17.0",
-    "lucide-react": "^0.471.0"
+    "@raycast/api": "^2.0.5",
+    "@raycast/utils": "^2.3.0",
+    "lucide-react": "^1.33.0"
   },
   "devDependencies": {
-    "@raycast/eslint-config": "^1.0.11",
-    "@types/node": "20.8.10",
-    "@types/react": "18.3.3",
-    "eslint": "^8.57.0",
-    "prettier": "^3.3.3",
-    "typescript": "^5.4.5"
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "22.19.17",
+    "@types/react": "19.0.10",
+    "eslint": "^10.9.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3"
   },
   "scripts": {
     "build": "ray build",
-    "dev": "ray develop",
+    "dev": "RAY_Target=x ray develop",
+    "dev:stable": "RAY_Target=release ray develop",
     "fix-lint": "ray lint --fix",
     "lint": "ray lint",
+    "test": "tsc --outDir /tmp/project-manager-test-build && node --test /tmp/project-manager-test-build/lib/*.test.js",
     "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
     "publish": "npx @raycast/api@latest publish"
   }

@@ -1,5 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Color, confirmAlert, getPreferenceValues, Keyboard } from "@raycast/api";
+import { Alert, Color, confirmAlert, getPreferenceValues, Keyboard, openExtensionPreferences } from "@raycast/api";
 import { ActionPanel, Action, Icon, List, showToast, Toast } from "@raycast/api";
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
 
@@ -19,8 +19,9 @@ import {
 import { getProjectGitDetails } from "./lib/get-project-git-details";
 import { getProjectWorktrees, removeProjectWorktree } from "./lib/get-project-worktrees";
 import { pullProjectFastForward } from "./lib/pull-project";
+import { sortProjects, type SortMode } from "./lib/project-sort";
 
-type View = "all" | "code" | "projects" | "active-projects" | "archived-projects";
+type View = "all" | "active-projects" | "archived-projects";
 
 function getProjectDataSignature(data: Project[] | undefined) {
   if (!data) {
@@ -60,10 +61,14 @@ function getInitialView(defaultView: Preferences.SearchProjects["defaultView"]):
   return "all";
 }
 
+function getSearchProjectPreferences() {
+  return getPreferenceValues<Preferences.SearchProjects>();
+}
+
 function getProjectIcon(project: Project) {
   return {
-    source: project.source === "code" ? Icon.Code : project.archived ? "folder-archive.svg" : "folder.svg",
-    tintColor: project.source === "code" ? Color.Blue : project.archived ? Color.SecondaryText : Color.PrimaryText,
+    source: project.archived ? "folder-archive.svg" : "folder.svg",
+    tintColor: project.archived ? Color.SecondaryText : Color.PrimaryText,
   };
 }
 
@@ -73,6 +78,34 @@ function isSamePath(left: string, right: string) {
 
 function canFastForward(project: Project) {
   return Boolean(project.gitUpstream) && !project.gitDirty && project.gitBehind > 0 && project.gitAhead === 0;
+}
+
+function SortActions({
+  sortMode,
+  onSortModeChange,
+}: {
+  sortMode: SortMode;
+  onSortModeChange: (sortMode: SortMode) => void;
+}) {
+  return (
+    <ActionPanel.Section title="Sort">
+      <Action
+        title="Sort by Most Recent"
+        onAction={onSortModeChange.bind(null, "recent")}
+        icon={sortMode === "recent" ? Icon.CheckCircle : Icon.Clock}
+      />
+      <Action
+        title="Sort by Largest"
+        onAction={onSortModeChange.bind(null, "largest")}
+        icon={sortMode === "largest" ? Icon.CheckCircle : Icon.HardDrive}
+      />
+      <Action
+        title="Sort by Name"
+        onAction={onSortModeChange.bind(null, "name")}
+        icon={sortMode === "name" ? Icon.CheckCircle : Icon.Text}
+      />
+    </ActionPanel.Section>
+  );
 }
 
 function WorktreesList({
@@ -244,28 +277,26 @@ function WorktreesList({
 }
 
 export default function Command() {
-  const { directory, codeDirectory, openWith, excludePatterns, defaultView } =
-    getPreferenceValues<Preferences.SearchProjects>();
-  const { data, isLoading, revalidate } = useCachedPromise(
-    getProjects,
-    [directory, codeDirectory, excludePatterns.split(",")],
-    {
-      keepPreviousData: true,
-    },
-  );
+  const [preferences, setPreferences] = useState(() => getSearchProjectPreferences());
+  const { projectDirectories, openWith, excludePatterns, defaultView } = preferences;
+  const excludeList = useMemo(() => excludePatterns.split(","), [excludePatterns]);
+  const { data, isLoading, revalidate } = useCachedPromise(getProjects, [projectDirectories, excludeList], {
+    keepPreviousData: true,
+  });
   const [diskSizes, setDiskSizes] = useState<DiskSizeMap>(() => getCachedProjectDiskSizes());
   const [isLoadingDiskSizes, setIsLoadingDiskSizes] = useState(false);
   const [diskSizeRefreshKey, setDiskSizeRefreshKey] = useState(0);
   const [projectOverrides, setProjectOverrides] = useState<Record<string, Partial<Project>>>({});
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(undefined);
   const [view, setView] = useState<View>(() => getInitialView(defaultView));
+  const [sortMode, setSortMode] = useState<SortMode>("recent");
   const projectDataSignature = useMemo(() => getProjectDataSignature(data), [data]);
   const diskSizeProjects = useMemo(() => getDiskSizeProjects(data), [projectDataSignature]);
 
   useEffect(() => {
     setDiskSizes(getCachedProjectDiskSizes());
     setProjectOverrides({});
-  }, [codeDirectory, directory]);
+  }, [projectDirectories]);
 
   useEffect(() => {
     if (!projectDataSignature) {
@@ -374,11 +405,32 @@ export default function Command() {
     [onRefreshProject],
   );
 
-  const onRefreshAll = useCallback(() => {
-    revalidate();
+  const reloadPreferences = useCallback(() => {
+    const nextPreferences = getSearchProjectPreferences();
+    const shouldRevalidate =
+      nextPreferences.projectDirectories === projectDirectories && nextPreferences.excludePatterns === excludePatterns;
+
+    setPreferences(nextPreferences);
+    setDiskSizes(getCachedProjectDiskSizes());
     setProjectOverrides({});
     setDiskSizeRefreshKey((key) => key + 1);
-  }, [revalidate]);
+
+    return shouldRevalidate;
+  }, [projectDirectories, excludePatterns]);
+
+  const onReloadPreferences = useCallback(() => {
+    if (reloadPreferences()) {
+      revalidate();
+    }
+
+    showToast({ title: "Preferences reloaded" });
+  }, [reloadPreferences, revalidate]);
+
+  const onRefreshAll = useCallback(() => {
+    if (reloadPreferences()) {
+      revalidate();
+    }
+  }, [reloadPreferences, revalidate]);
 
   const onWorktreeDeleted = useCallback(
     (pathnames: string[]) => {
@@ -445,7 +497,7 @@ export default function Command() {
           title: "Archiving project...",
         });
 
-        const archivePath = await archiveProject(project.pathname, excludePatterns.split(","));
+        const archivePath = await archiveProject(project.pathname, excludeList);
 
         revalidate();
         setDiskSizeRefreshKey((key) => key + 1);
@@ -465,7 +517,7 @@ export default function Command() {
         showFailureToast(err);
       }
     },
-    [revalidate, excludePatterns, view],
+    [revalidate, excludeList, view],
   );
 
   const filtered = useMemo(() => {
@@ -473,34 +525,27 @@ export default function Command() {
       return data;
     }
 
+    let projects: Project[];
+
     if (view === "all") {
-      return data.map(applyDiskSize);
+      projects = data.map(applyDiskSize);
+    } else if (view === "active-projects") {
+      projects = data.filter((item) => !item.archived).map(applyDiskSize);
+    } else {
+      projects = data.filter((item) => item.archived).map(applyDiskSize);
     }
 
-    if (view === "code") {
-      return data?.filter((item) => item.source === "code").map(applyDiskSize);
-    }
-
-    if (view === "projects") {
-      return data?.filter((item) => item.source === "projects").map(applyDiskSize);
-    }
-
-    if (view === "active-projects") {
-      return data?.filter((item) => item.source === "projects" && !item.archived).map(applyDiskSize);
-    }
-
-    return data?.filter((item) => item.source === "projects" && item.archived).map(applyDiskSize);
-  }, [applyDiskSize, data, view]);
+    return sortProjects(projects, sortMode);
+  }, [applyDiskSize, data, sortMode, view]);
 
   return (
     <List
       isLoading={isLoading || isLoadingDiskSizes}
+      navigationTitle={`Projects, Sorted by ${sortMode === "recent" ? "Most Recent" : sortMode === "largest" ? "Largest" : "Name"}`}
       selectedItemId={selectedItemId}
       searchBarAccessory={
         <List.Dropdown tooltip="Dropdown With Items" value={view} onChange={(value) => setView(value as View)}>
           <List.Dropdown.Item title="All" value="all" />
-          <List.Dropdown.Item title="Code Only" value="code" />
-          <List.Dropdown.Item title="Projects Only" value="projects" />
           <List.Dropdown.Item title="Active Projects Only" value="active-projects" />
           <List.Dropdown.Item title="Archived Projects Only" value="archived-projects" />
         </List.Dropdown>
@@ -536,6 +581,9 @@ export default function Command() {
                     icon={Icon.ArrowClockwise}
                     shortcut={Keyboard.Shortcut.Common.Refresh}
                   />
+                  <SortActions sortMode={sortMode} onSortModeChange={setSortMode} />
+                  <Action title="Reload Preferences" onAction={onReloadPreferences} icon={Icon.Gear} />
+                  <Action title="Open Extension Preferences" onAction={openExtensionPreferences} icon={Icon.Gear} />
                 </>
               ) : (
                 <>
@@ -584,6 +632,9 @@ export default function Command() {
                     icon={Icon.ArrowClockwise}
                     shortcut={Keyboard.Shortcut.Common.Refresh}
                   />
+                  <SortActions sortMode={sortMode} onSortModeChange={setSortMode} />
+                  <Action title="Reload Preferences" onAction={onReloadPreferences} icon={Icon.Gear} />
+                  <Action title="Open Extension Preferences" onAction={openExtensionPreferences} icon={Icon.Gear} />
 
                   {item.canArchive ? (
                     <Action
