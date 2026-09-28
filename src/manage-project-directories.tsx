@@ -4,23 +4,24 @@ import {
   Alert,
   confirmAlert,
   Form,
+  getPreferenceValues,
   Icon,
   List,
   Keyboard,
   showToast,
   useNavigation,
 } from "@raycast/api";
-import { getPreferenceValues } from "@raycast/api";
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
 
-import { resolveProjectPatterns, setStoredProjectDirectories } from "./lib/project-directories";
+import { PROJECT_NAME_STYLES, resolveProjectPatterns, setStoredProjectDirectories } from "./lib/project-directories";
+import type { ProjectNameStyle, ProjectPattern } from "./lib/project-sources";
 
 function DirectoryForm({
   initialValue,
   onSubmit,
 }: {
-  initialValue?: string;
-  onSubmit: (value: string) => Promise<void>;
+  initialValue?: ProjectPattern;
+  onSubmit: (value: ProjectPattern) => Promise<void>;
 }) {
   const { pop } = useNavigation();
 
@@ -31,13 +32,13 @@ function DirectoryForm({
         <ActionPanel>
           <Action.SubmitForm
             title="Save"
-            onSubmit={async ({ pattern }: { pattern: string }) => {
+            onSubmit={async ({ pattern, nameStyle }: { pattern: string; nameStyle: ProjectNameStyle }) => {
               if (!pattern.trim()) {
                 return;
               }
 
               try {
-                await onSubmit(pattern.trim());
+                await onSubmit({ pattern: pattern.trim(), nameStyle });
                 pop();
               } catch (err) {
                 showFailureToast(err);
@@ -47,16 +48,30 @@ function DirectoryForm({
         </ActionPanel>
       }
     >
-      <Form.TextField id="pattern" title="Pattern" placeholder="~/Code/github.com/*/*" defaultValue={initialValue} />
+      <Form.TextField
+        id="pattern"
+        title="Pattern"
+        placeholder="~/Code/github.com/*/*"
+        defaultValue={initialValue?.pattern}
+      />
+      <Form.Dropdown id="nameStyle" title="Project Name" defaultValue={initialValue?.nameStyle ?? "auto"}>
+        {PROJECT_NAME_STYLES.map((style) => (
+          <Form.Dropdown.Item key={style.value} value={style.value} title={style.title} />
+        ))}
+      </Form.Dropdown>
     </Form>
   );
+}
+
+function getNameStyleTitle(nameStyle: ProjectNameStyle) {
+  return PROJECT_NAME_STYLES.find((style) => style.value === nameStyle)?.title ?? nameStyle;
 }
 
 export default function Command() {
   const { projectDirectories } = getPreferenceValues<Preferences.ManageProjectDirectories>();
   const { data: directories = [], isLoading, mutate } = useCachedPromise(resolveProjectPatterns, [projectDirectories]);
 
-  const save = async (next: string[]) => {
+  const save = async (next: ProjectPattern[]) => {
     await mutate(setStoredProjectDirectories(next), { optimisticUpdate: () => next });
     showToast({ title: "Project directories saved" });
   };
@@ -75,9 +90,10 @@ export default function Command() {
       <List.EmptyView title="No project directories" description="Add a glob pattern such as ~/Code/github.com/*/*" />
       {directories.map((directory, index) => (
         <List.Item
-          key={`${index}:${directory}`}
-          title={directory}
+          key={`${index}:${directory.pattern}`}
+          title={directory.pattern}
           icon={Icon.Folder}
+          accessories={[{ tag: getNameStyleTitle(directory.nameStyle) }]}
           actions={
             <ActionPanel>
               <Action.Push
@@ -99,7 +115,7 @@ export default function Command() {
                 onAction={async () => {
                   const confirmed = await confirmAlert({
                     title: "Remove Directory Pattern?",
-                    message: directory,
+                    message: directory.pattern,
                     primaryAction: { title: "Remove", style: Alert.ActionStyle.Destructive },
                   });
                   if (!confirmed) {

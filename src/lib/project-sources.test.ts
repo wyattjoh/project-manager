@@ -25,6 +25,23 @@ describe("parseProjectPatterns", () => {
 });
 
 describe("discoverProjectSources", () => {
+  test("applies the configured name style for each pattern", async () => {
+    const directory = await makeTempDirectory();
+    const repositoryPath = path.join(directory, "github.com", "owner", "repo");
+    await makeGitRepository(repositoryPath);
+    const pattern = path.join(directory, "github.com", "owner", "*");
+
+    for (const [nameStyle, filename] of [
+      ["name", "repo"],
+      ["owner", "owner/repo"],
+      ["domain", "github.com/owner/repo"],
+      ["auto", "github.com/owner/repo"],
+    ] as const) {
+      const [source] = await discoverProjectSources([{ pattern, nameStyle }]);
+      assert.equal(source.filename, filename);
+    }
+  });
+
   test("treats a literal non-repo directory as a container of projects", async () => {
     const directory = await makeTempDirectory();
     const repositoryPath = path.join(directory, "repo");

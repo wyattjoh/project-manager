@@ -43,6 +43,19 @@ export type ProjectSourceDebugSnapshot = {
   sources: ProjectSource[];
 };
 
+/**
+ * Controls how a project's display name includes its containing folders.
+ */
+export type ProjectNameStyle = "auto" | "name" | "owner" | "domain";
+
+/**
+ * A configured directory pattern and the naming style applied to projects it matches.
+ */
+export type ProjectPattern = {
+  pattern: string;
+  nameStyle: ProjectNameStyle;
+};
+
 type ProjectCandidate = {
   pathname: string;
   shouldPrefixFilename: boolean;
@@ -65,19 +78,37 @@ export function parseProjectPatterns(directoryPreference: string): string[] {
 /**
  * Resolves comma-separated project patterns into git repositories and archives.
  */
-export async function discoverProjectSources(patterns: string[]): Promise<ProjectSource[]> {
-  const pathnames = await expandProjectPatterns(patterns);
-  const sources = await getMatchedProjectSources(pathnames);
-  return applyDuplicateFilenamePrefixes(sources);
+export async function discoverProjectSources(patterns: Array<string | ProjectPattern>): Promise<ProjectSource[]> {
+  const nameStyles = new Map<string, ProjectNameStyle>();
+  const candidates: ProjectCandidate[] = [];
+
+  for (const { pattern, nameStyle } of patterns.map(toProjectPattern)) {
+    for (const candidate of await expandProjectPattern(pattern)) {
+      const resolvedPathname = path.resolve(candidate.pathname);
+      if (!nameStyles.has(resolvedPathname)) {
+        nameStyles.set(resolvedPathname, nameStyle);
+      }
+      candidates.push(candidate);
+    }
+  }
+
+  const sources = await getMatchedProjectSources(candidates);
+  return applyFilenamePrefixes(sources, nameStyles);
+}
+
+function toProjectPattern(pattern: string | ProjectPattern): ProjectPattern {
+  return typeof pattern === "string" ? { pattern, nameStyle: "auto" } : pattern;
 }
 
 /**
  * Resolves project patterns and returns intermediate expansion details for diagnostics.
  */
-export async function getProjectSourceDebugSnapshot(patterns: string[]): Promise<ProjectSourceDebugSnapshot> {
+export async function getProjectSourceDebugSnapshot(
+  patterns: Array<string | ProjectPattern>,
+): Promise<ProjectSourceDebugSnapshot> {
   const debugPatterns: ProjectSourceDebugPattern[] = [];
 
-  for (const pattern of patterns) {
+  for (const { pattern } of patterns.map(toProjectPattern)) {
     const absolutePattern = toAbsolutePath(pattern);
     const candidates = await expandProjectPattern(pattern);
     debugPatterns.push({
@@ -92,16 +123,6 @@ export async function getProjectSourceDebugSnapshot(patterns: string[]): Promise
     patterns: debugPatterns,
     sources: await discoverProjectSources(patterns),
   };
-}
-
-async function expandProjectPatterns(patterns: string[]) {
-  const candidates: ProjectCandidate[] = [];
-
-  for (const pattern of patterns) {
-    candidates.push(...(await expandProjectPattern(pattern)));
-  }
-
-  return candidates;
 }
 
 async function expandProjectPattern(pattern: string): Promise<ProjectCandidate[]> {
@@ -281,7 +302,10 @@ async function isGitRepository(pathname: string) {
   return Boolean(dotGitStats);
 }
 
-function applyDuplicateFilenamePrefixes(sources: MatchedProjectSource[]): ProjectSource[] {
+function applyFilenamePrefixes(
+  sources: MatchedProjectSource[],
+  nameStyles: Map<string, ProjectNameStyle>,
+): ProjectSource[] {
   const filenameCounts = sources.reduce<Record<string, number>>((counts, source) => {
     counts[source.filename] = (counts[source.filename] ?? 0) + 1;
     return counts;
@@ -292,6 +316,13 @@ function applyDuplicateFilenamePrefixes(sources: MatchedProjectSource[]): Projec
     const parentPathname = path.dirname(source.pathname);
     const parentName = path.basename(parentPathname);
     const grandparentName = path.basename(path.dirname(parentPathname));
+    const nameStyle = nameStyles.get(source.pathname) ?? "auto";
+
+    if (nameStyle !== "auto") {
+      const prefixes = { name: [], owner: [parentName], domain: [grandparentName, parentName] }[nameStyle];
+      return { ...projectSource, filename: [...prefixes, source.filename].join("/") };
+    }
+
     const filename = grandparentName.includes(".")
       ? `${grandparentName}/${parentName}/${source.filename}`
       : shouldPrefixFilename || filenameCounts[source.filename] > 1
