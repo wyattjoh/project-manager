@@ -289,9 +289,12 @@ function applyDuplicateFilenamePrefixes(sources: MatchedProjectSource[]): Projec
 
   return sources.map((source) => {
     const { shouldPrefixFilename, ...projectSource } = source;
-    const parentName = path.basename(path.dirname(source.pathname));
-    const filename =
-      shouldPrefixFilename || filenameCounts[source.filename] > 1 || parentName.includes(".")
+    const parentPathname = path.dirname(source.pathname);
+    const parentName = path.basename(parentPathname);
+    const grandparentName = path.basename(path.dirname(parentPathname));
+    const filename = grandparentName.includes(".")
+      ? `${grandparentName}/${parentName}/${source.filename}`
+      : shouldPrefixFilename || filenameCounts[source.filename] > 1
         ? `${parentName}/${source.filename}`
         : source.filename;
 
