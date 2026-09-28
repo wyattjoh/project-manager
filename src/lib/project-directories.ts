@@ -1,6 +1,6 @@
 import { LocalStorage } from "@raycast/api";
 
-import { parseProjectPatterns, type ProjectNameStyle, type ProjectPattern } from "./project-sources";
+import type { ProjectNameStyle, ProjectPattern } from "./project-sources";
 
 const STORAGE_KEY = "projectDirectories";
 
@@ -58,16 +58,4 @@ export async function setStoredProjectDirectories(directories: ProjectPattern[])
     .map((directory) => ({ ...directory, pattern: directory.pattern.trim() }))
     .filter((directory) => directory.pattern);
   await LocalStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
-}
-
-/**
- * Resolves the active patterns, preferring stored directories over the comma-separated preference.
- */
-export async function resolveProjectPatterns(directoryPreference: string | undefined): Promise<ProjectPattern[]> {
-  const stored = await getStoredProjectDirectories();
-  if (stored.length > 0) {
-    return stored;
-  }
-
-  return parseProjectPatterns(directoryPreference ?? "").map((pattern) => ({ pattern, nameStyle: "auto" }));
 }

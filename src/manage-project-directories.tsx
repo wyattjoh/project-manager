@@ -5,7 +5,6 @@ import {
   Color,
   confirmAlert,
   Form,
-  getPreferenceValues,
   Icon,
   List,
   Keyboard,
@@ -14,7 +13,11 @@ import {
 } from "@raycast/api";
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
 
-import { PROJECT_NAME_STYLES, resolveProjectPatterns, setStoredProjectDirectories } from "./lib/project-directories";
+import {
+  PROJECT_NAME_STYLES,
+  getStoredProjectDirectories,
+  setStoredProjectDirectories,
+} from "./lib/project-directories";
 import { discoverProjectSources, type ProjectNameStyle, type ProjectPattern } from "./lib/project-sources";
 
 type PatternMatchResult = { count: number } | { error: string };
@@ -101,8 +104,7 @@ function getNameStyleTitle(nameStyle: ProjectNameStyle) {
 }
 
 export default function Command() {
-  const { projectDirectories } = getPreferenceValues<Preferences.ManageProjectDirectories>();
-  const { data: directories = [], isLoading, mutate } = useCachedPromise(resolveProjectPatterns, [projectDirectories]);
+  const { data: directories = [], isLoading, mutate } = useCachedPromise(getStoredProjectDirectories, []);
 
   const { data: matchResults } = useCachedPromise(getPatternMatchResults, [
     directories.map((directory) => directory.pattern),

@@ -2,7 +2,7 @@ import type { Project } from "../types/project";
 
 import { getProjectGitDetails } from "./get-project-git-details";
 import { createLogger } from "./log";
-import { resolveProjectPatterns } from "./project-directories";
+import { getStoredProjectDirectories } from "./project-directories";
 import { discoverProjectSources, type ProjectSource } from "./project-sources";
 
 const PROJECT_SCAN_CONCURRENCY = 8;
@@ -70,11 +70,9 @@ async function getProjectsFromSource(source: ProjectSource) {
   } satisfies Project;
 }
 
-export async function getProjects(directory: string | undefined, _excludePatterns: string[]): Promise<Project[]> {
-  void _excludePatterns;
-
+export async function getProjects(): Promise<Project[]> {
   const start = Date.now();
-  const sources = await discoverProjectSources(await resolveProjectPatterns(directory));
+  const sources = await discoverProjectSources(await getStoredProjectDirectories());
   log("scan begin sources=%d paths=%s", sources.length, sources.map((s) => s.pathname).join(","));
   const projects = await mapWithConcurrency(sources, PROJECT_SCAN_CONCURRENCY, getProjectsFromSource);
   const probeEnd = Date.now();

@@ -66,16 +66,6 @@ type MatchedProjectSource = ProjectSource & {
 };
 
 /**
- * Parses the comma-separated project directory pattern preference into usable patterns.
- */
-export function parseProjectPatterns(directoryPreference: string): string[] {
-  return directoryPreference
-    .split(",")
-    .map((pattern) => pattern.trim())
-    .filter(Boolean);
-}
-
-/**
  * Resolves comma-separated project patterns into git repositories and archives.
  */
 export async function discoverProjectSources(patterns: Array<string | ProjectPattern>): Promise<ProjectSource[]> {

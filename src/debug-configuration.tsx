@@ -13,7 +13,7 @@ import {
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
 import { useEffect } from "react";
 
-import { resolveProjectPatterns } from "./lib/project-directories";
+import { getStoredProjectDirectories } from "./lib/project-directories";
 import {
   getProjectSourceDebugSnapshot,
   type ProjectPattern,
@@ -37,15 +37,15 @@ type DebugItemProps = {
 
 type DebugConfiguration = {
   generatedAt: string;
-  preferences: Preferences.DebugConfiguration & { directory?: string };
+  preferences: Preferences.DebugConfiguration;
   patterns: ProjectPattern[];
   runtime: Record<string, string>;
   snapshot: Awaited<ReturnType<typeof getProjectSourceDebugSnapshot>>;
 };
 
 async function loadDebugConfiguration(): Promise<DebugConfiguration> {
-  const preferences = getPreferenceValues<Preferences.DebugConfiguration & { directory?: string }>();
-  const patterns = await resolveProjectPatterns(preferences.projectDirectories);
+  const preferences = getPreferenceValues<Preferences.DebugConfiguration>();
+  const patterns = await getStoredProjectDirectories();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -105,19 +105,9 @@ function getPreferenceRows(configuration: DebugConfiguration) {
 
   return [
     {
-      title: "Projects Directories",
-      subtitle: preferences.projectDirectories ?? "(unset)",
-      value: preferences.projectDirectories ?? "",
-    },
-    {
       title: "Resolved Patterns",
       subtitle: configuration.patterns.map((p) => `${p.pattern} (${p.nameStyle})`).join(", "),
       value: configuration.patterns.map((p) => p.pattern).join(","),
-    },
-    {
-      title: "Legacy Directory",
-      subtitle: preferences.directory ?? "(unset)",
-      value: preferences.directory ?? "",
     },
     {
       title: "Parsed Pattern Count",

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
 
-import { discoverProjectSources, getProjectSourceDebugSnapshot, parseProjectPatterns } from "./project-sources";
+import { discoverProjectSources, getProjectSourceDebugSnapshot } from "./project-sources";
 
 async function makeTempDirectory() {
   return fs.mkdtemp(path.join(os.tmpdir(), "project-manager-sources-"));
@@ -13,16 +13,6 @@ async function makeTempDirectory() {
 async function makeGitRepository(pathname: string) {
   await fs.mkdir(path.join(pathname, ".git"), { recursive: true });
 }
-
-describe("parseProjectPatterns", () => {
-  test("parses a comma-separated list of project patterns", () => {
-    assert.deepEqual(parseProjectPatterns("/Users/me/Code/*, /tmp/projects/**,,/var/repos "), [
-      "/Users/me/Code/*",
-      "/tmp/projects/**",
-      "/var/repos",
-    ]);
-  });
-});
 
 describe("discoverProjectSources", () => {
   test("applies the configured name style for each pattern", async () => {

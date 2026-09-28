@@ -278,9 +278,9 @@ function WorktreesList({
 
 export default function Command() {
   const [preferences, setPreferences] = useState(() => getSearchProjectPreferences());
-  const { projectDirectories, openWith, excludePatterns, defaultView } = preferences;
+  const { openWith, excludePatterns, defaultView } = preferences;
   const excludeList = useMemo(() => excludePatterns.split(","), [excludePatterns]);
-  const { data, isLoading, revalidate } = useCachedPromise(getProjects, [projectDirectories, excludeList], {
+  const { data, isLoading, revalidate } = useCachedPromise(getProjects, [], {
     keepPreviousData: true,
   });
   const [diskSizes, setDiskSizes] = useState<DiskSizeMap>(() => getCachedProjectDiskSizes());
@@ -292,11 +292,6 @@ export default function Command() {
   const [sortMode, setSortMode] = useState<SortMode>("recent");
   const projectDataSignature = useMemo(() => getProjectDataSignature(data), [data]);
   const diskSizeProjects = useMemo(() => getDiskSizeProjects(data), [projectDataSignature]);
-
-  useEffect(() => {
-    setDiskSizes(getCachedProjectDiskSizes());
-    setProjectOverrides({});
-  }, [projectDirectories]);
 
   useEffect(() => {
     if (!projectDataSignature) {
@@ -406,30 +401,22 @@ export default function Command() {
   );
 
   const reloadPreferences = useCallback(() => {
-    const nextPreferences = getSearchProjectPreferences();
-    const shouldRevalidate =
-      nextPreferences.projectDirectories === projectDirectories && nextPreferences.excludePatterns === excludePatterns;
-
-    setPreferences(nextPreferences);
+    setPreferences(getSearchProjectPreferences());
     setDiskSizes(getCachedProjectDiskSizes());
     setProjectOverrides({});
     setDiskSizeRefreshKey((key) => key + 1);
-
-    return shouldRevalidate;
-  }, [projectDirectories, excludePatterns]);
+  }, []);
 
   const onReloadPreferences = useCallback(() => {
-    if (reloadPreferences()) {
-      revalidate();
-    }
+    reloadPreferences();
+    revalidate();
 
     showToast({ title: "Preferences reloaded" });
   }, [reloadPreferences, revalidate]);
 
   const onRefreshAll = useCallback(() => {
-    if (reloadPreferences()) {
-      revalidate();
-    }
+    reloadPreferences();
+    revalidate();
   }, [reloadPreferences, revalidate]);
 
   const onWorktreeDeleted = useCallback(

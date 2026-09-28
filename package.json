@@ -31,13 +31,6 @@
   ],
   "preferences": [
     {
-      "name": "projectDirectories",
-      "title": "Projects Directories",
-      "description": "Comma-separated project directory glob patterns, for example ~/Code/github.com/*/*. Ignored when patterns are saved with the Manage Project Directories command.",
-      "type": "textfield",
-      "required": false
-    },
-    {
       "name": "openWith",
       "title": "Open With",
       "description": "The application to open projects with",
