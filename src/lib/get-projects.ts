@@ -2,7 +2,8 @@ import type { Project } from "../types/project";
 
 import { getProjectGitDetails } from "./get-project-git-details";
 import { createLogger } from "./log";
-import { discoverProjectSources, parseProjectPatterns, type ProjectSource } from "./project-sources";
+import { resolveProjectPatterns } from "./project-directories";
+import { discoverProjectSources, type ProjectSource } from "./project-sources";
 
 const PROJECT_SCAN_CONCURRENCY = 8;
 const log = createLogger("project-manager:scan");
@@ -69,11 +70,11 @@ async function getProjectsFromSource(source: ProjectSource) {
   } satisfies Project;
 }
 
-export async function getProjects(directory: string, _excludePatterns: string[]): Promise<Project[]> {
+export async function getProjects(directory: string | undefined, _excludePatterns: string[]): Promise<Project[]> {
   void _excludePatterns;
 
   const start = Date.now();
-  const sources = await discoverProjectSources(parseProjectPatterns(directory));
+  const sources = await discoverProjectSources(await resolveProjectPatterns(directory));
   log("scan begin sources=%d paths=%s", sources.length, sources.map((s) => s.pathname).join(","));
   const projects = await mapWithConcurrency(sources, PROJECT_SCAN_CONCURRENCY, getProjectsFromSource);
   const probeEnd = Date.now();

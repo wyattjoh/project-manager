@@ -21,15 +21,21 @@
       "title": "Debug Project Manager Configuration",
       "description": "Show the project manager preferences, Raycast runtime environment, and resolved project sources.",
       "mode": "view"
+    },
+    {
+      "name": "manage-project-directories",
+      "title": "Manage Project Directories",
+      "description": "Add, edit, and remove the directory patterns scanned for projects.",
+      "mode": "view"
     }
   ],
   "preferences": [
     {
       "name": "projectDirectories",
       "title": "Projects Directories",
-      "description": "Comma-separated project directory glob patterns, for example ~/Code/github.com/*/*",
+      "description": "Comma-separated project directory glob patterns, for example ~/Code/github.com/*/*. Ignored when patterns are saved with the Manage Project Directories command.",
       "type": "textfield",
-      "required": true
+      "required": false
     },
     {
       "name": "openWith",

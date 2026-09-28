@@ -13,11 +13,8 @@ import {
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
 import { useEffect } from "react";
 
-import {
-  getProjectSourceDebugSnapshot,
-  parseProjectPatterns,
-  type ProjectSourceDebugCandidate,
-} from "./lib/project-sources";
+import { resolveProjectPatterns } from "./lib/project-directories";
+import { getProjectSourceDebugSnapshot, type ProjectSourceDebugCandidate } from "./lib/project-sources";
 
 const MAX_REJECTED_CANDIDATES = 200;
 
@@ -44,7 +41,7 @@ type DebugConfiguration = {
 
 async function loadDebugConfiguration(): Promise<DebugConfiguration> {
   const preferences = getPreferenceValues<Preferences.DebugConfiguration & { directory?: string }>();
-  const patterns = parseProjectPatterns(preferences.projectDirectories);
+  const patterns = await resolveProjectPatterns(preferences.projectDirectories);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -105,8 +102,13 @@ function getPreferenceRows(configuration: DebugConfiguration) {
   return [
     {
       title: "Projects Directories",
-      subtitle: preferences.projectDirectories,
-      value: preferences.projectDirectories,
+      subtitle: preferences.projectDirectories ?? "(unset)",
+      value: preferences.projectDirectories ?? "",
+    },
+    {
+      title: "Resolved Patterns",
+      subtitle: configuration.patterns.join(", "),
+      value: configuration.patterns.join(","),
     },
     {
       title: "Legacy Directory",
