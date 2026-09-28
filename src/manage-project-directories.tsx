@@ -2,6 +2,7 @@ import {
   Action,
   ActionPanel,
   Alert,
+  Color,
   confirmAlert,
   Form,
   getPreferenceValues,
@@ -14,7 +15,39 @@ import {
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
 
 import { PROJECT_NAME_STYLES, resolveProjectPatterns, setStoredProjectDirectories } from "./lib/project-directories";
-import type { ProjectNameStyle, ProjectPattern } from "./lib/project-sources";
+import { discoverProjectSources, type ProjectNameStyle, type ProjectPattern } from "./lib/project-sources";
+
+type PatternMatchResult = { count: number } | { error: string };
+
+async function getPatternMatchResults(patterns: string[]): Promise<Record<string, PatternMatchResult>> {
+  const entries = await Promise.all(
+    patterns.map(async (pattern) => {
+      try {
+        return [pattern, { count: (await discoverProjectSources([pattern])).length }] as const;
+      } catch (err) {
+        return [pattern, { error: err instanceof Error ? err.message : String(err) }] as const;
+      }
+    }),
+  );
+
+  return Object.fromEntries(entries);
+}
+
+function getMatchAccessory(result: PatternMatchResult | undefined): List.Item.Accessory {
+  if (!result) {
+    return { icon: Icon.CircleProgress, tooltip: "Scanning..." };
+  }
+
+  if ("error" in result) {
+    return { icon: { source: Icon.ExclamationMark, tintColor: Color.Red }, text: "Error", tooltip: result.error };
+  }
+
+  if (result.count === 0) {
+    return { icon: { source: Icon.Warning, tintColor: Color.Yellow }, text: "No repositories" };
+  }
+
+  return { text: `${result.count} ${result.count === 1 ? "repository" : "repositories"}` };
+}
 
 function DirectoryForm({
   initialValue,
@@ -71,6 +104,10 @@ export default function Command() {
   const { projectDirectories } = getPreferenceValues<Preferences.ManageProjectDirectories>();
   const { data: directories = [], isLoading, mutate } = useCachedPromise(resolveProjectPatterns, [projectDirectories]);
 
+  const { data: matchResults } = useCachedPromise(getPatternMatchResults, [
+    directories.map((directory) => directory.pattern),
+  ]);
+
   const save = async (next: ProjectPattern[]) => {
     await mutate(setStoredProjectDirectories(next), { optimisticUpdate: () => next });
     showToast({ title: "Project directories saved" });
@@ -93,7 +130,10 @@ export default function Command() {
           key={`${index}:${directory.pattern}`}
           title={directory.pattern}
           icon={Icon.Folder}
-          accessories={[{ tag: getNameStyleTitle(directory.nameStyle) }]}
+          accessories={[
+            getMatchAccessory(matchResults?.[directory.pattern]),
+            { tag: getNameStyleTitle(directory.nameStyle) },
+          ]}
           actions={
             <ActionPanel>
               <Action.Push
